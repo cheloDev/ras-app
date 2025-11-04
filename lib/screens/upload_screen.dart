@@ -1,3 +1,4 @@
+// dart
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
@@ -18,6 +19,41 @@ class _UploadScreenState extends State<UploadScreen> {
   final ImagePicker _picker = ImagePicker();
   final List<XFile> _images = [];
   bool _isLoading = false;
+
+  // Nuevo: controla si los botones de cámara/galería deben mostrarse
+  bool _canPickImages = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _siniestroController.addListener(_onFieldsChanged);
+    _patenteController.addListener(_onFieldsChanged);
+  }
+
+  void _onFieldsChanged() {
+    // Llama a la comprobación (async) cada vez que cambian los campos
+    _checkValidation();
+  }
+
+  Future<void> _checkValidation() async {
+    final siniestro = _siniestroController.text.trim();
+    final patente = _patenteController.text.trim();
+
+    if (siniestro.isNotEmpty && patente.isNotEmpty) {
+      final valid = await _mockValidateSiniestro();
+      if (mounted) {
+        setState(() {
+          _canPickImages = valid;
+        });
+      }
+    } else {
+      if (mounted) {
+        setState(() {
+          _canPickImages = false;
+        });
+      }
+    }
+  }
 
   Future<void> _pickImage(ImageSource source) async {
     if (_images.length >= 5) {
@@ -54,6 +90,7 @@ class _UploadScreenState extends State<UploadScreen> {
             _images.clear();
             _siniestroController.clear();
             _patenteController.clear();
+            _canPickImages = false;
           });
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -78,6 +115,7 @@ class _UploadScreenState extends State<UploadScreen> {
 
   Future<bool> _mockValidateSiniestro() async {
     // Simulate a call to https://ras.webintegral.cl/api/get-siniestro
+    await Future.delayed(const Duration(milliseconds: 300)); // small delay para simular llamada
     return _siniestroController.text.isNotEmpty && _patenteController.text.isNotEmpty;
   }
 
@@ -97,6 +135,15 @@ class _UploadScreenState extends State<UploadScreen> {
       print('Error resizing images: $e');
       return false;
     }
+  }
+
+  @override
+  void dispose() {
+    _siniestroController.removeListener(_onFieldsChanged);
+    _patenteController.removeListener(_onFieldsChanged);
+    _siniestroController.dispose();
+    _patenteController.dispose();
+    super.dispose();
   }
 
   @override
@@ -133,44 +180,55 @@ class _UploadScreenState extends State<UploadScreen> {
                   },
                 ),
                 const SizedBox(height: 20),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    ElevatedButton.icon(
-                      onPressed: () => _pickImage(ImageSource.camera),
-                      icon: const Icon(Icons.camera),
-                      label: const Text('Cámara'),
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: () => _pickImage(ImageSource.gallery),
-                      icon: const Icon(Icons.photo_library),
-                      label: const Text('Galería'),
-                    ),
-                  ],
-                ),
+
+                // Los botones solo aparecen si _canPickImages es true
+                if (_canPickImages)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: () => _pickImage(ImageSource.camera),
+                        icon: const Icon(Icons.camera),
+                        label: const Text('Cámara'),
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: () => _pickImage(ImageSource.gallery),
+                        icon: const Icon(Icons.photo_library),
+                        label: const Text('Galería'),
+                      ),
+                    ],
+                  )
+                else
+                  const Text(
+                    'Ingrese Nro de Siniestro y Patente válidos para activar Cámara y Galería.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey),
+                  ),
+
                 const SizedBox(height: 20),
                 _images.isEmpty
                     ? const Text('No hay imágenes seleccionadas.')
                     : GridView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
-                          crossAxisSpacing: 4.0,
-                          mainAxisSpacing: 4.0,
-                        ),
-                        itemCount: _images.length,
-                        itemBuilder: (context, index) {
-                          return Image.file(File(_images[index].path));
-                        },
-                      ),
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    crossAxisSpacing: 4.0,
+                    mainAxisSpacing: 4.0,
+                  ),
+                  itemCount: _images.length,
+                  itemBuilder: (context, index) {
+                    return Image.file(File(_images[index].path));
+                  },
+                ),
                 const SizedBox(height: 20),
+                // El botón se deshabilita cuando no hay imágenes (\_images.isEmpty)
                 _isLoading
                     ? const CircularProgressIndicator()
                     : ElevatedButton(
-                        onPressed: _uploadImages,
-                        child: const Text('Subir Imágenes'),
-                      ),
+                  onPressed: _images.isNotEmpty ? _uploadImages : null,
+                  child: const Text('Subir Imágenes'),
+                ),
               ],
             ),
           ),
