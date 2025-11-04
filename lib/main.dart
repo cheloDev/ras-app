@@ -1,4 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:ras/screens/login_screen.dart';
+import 'package:ras/screens/splash_screen.dart';
+import 'package:ras/screens/upload_screen.dart';
+import 'package:ras/screens/viewer_screen.dart';
+import 'package:ras/utils/session_manager.dart';
 import 'widgets/custom_button.dart';
 import 'screens/settings_page.dart';
 
@@ -18,7 +23,14 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
         useMaterial3: true,
       ),
-      home: const HomePage(),
+      initialRoute: '/',
+      routes: {
+        '/': (context) => const SplashScreen(),
+        '/login': (context) => const LoginScreen(),
+        '/home': (context) => const HomePage(),
+        '/upload': (context) => const UploadScreen(),
+        '/viewer': (context) => const ViewerScreen(),
+      },
     );
   }
 }
@@ -74,6 +86,16 @@ class HomePage extends StatelessWidget {
             ),
 
             // ... (Otros ListTile o Divider)
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.logout),
+              title: const Text('Cerrar Sesión'),
+              onTap: () async {
+                final sessionManager = SessionManager();
+                await sessionManager.deleteToken();
+                Navigator.pushReplacementNamed(context, '/login');
+              },
+            ),
           ],
         ),
       ),
@@ -87,11 +109,16 @@ class HomePage extends StatelessWidget {
             ),
             const SizedBox(height: 20),
             CustomButton(
-              text: 'Botón Personalizado',
+              text: 'Subir Imágenes',
               onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('¡Componente Reutilizado! 🎉')),
-                );
+                Navigator.pushNamed(context, '/upload');
+              },
+            ),
+            const SizedBox(height: 20),
+            CustomButton(
+              text: 'Visualizar Imágenes',
+              onPressed: () {
+                Navigator.pushNamed(context, '/viewer');
               },
             ),
           ],
