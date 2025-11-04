@@ -82,12 +82,12 @@ class HomePage extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Text(
-              '¡Hola, Marcelo! 👋',
+              '¡RAS, Capturador de Fotos! 👋',
               style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 20),
             CustomButton(
-              text: 'Botón Personalizado',
+              text: 'Tomar Foto',
               onPressed: () {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('¡Componente Reutilizado! 🎉')),
