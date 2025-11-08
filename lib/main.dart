@@ -6,6 +6,7 @@ import 'package:ras/screens/viewer_screen.dart';
 import 'package:ras/utils/session_manager.dart';
 import 'widgets/custom_button.dart';
 import 'screens/settings_page.dart';
+import 'widgets/auth_guard.dart'; // <- importar AuthGuard
 
 void main() {
   runApp(const MyApp());
@@ -17,7 +18,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      debugShowCheckedModeBanner: false, // Quita la cinta de "Debug"
+      debugShowCheckedModeBanner: false,
       title: 'Mi Primera App',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
@@ -27,9 +28,10 @@ class MyApp extends StatelessWidget {
       routes: {
         '/': (context) => const SplashScreen(),
         '/login': (context) => const LoginScreen(),
-        '/home': (context) => const HomePage(),
-        '/upload': (context) => const UploadScreen(),
-        '/viewer': (context) => const ViewerScreen(),
+        // Rutas privadas envueltas en AuthGuard
+        '/home': (context) => const AuthGuard(child: HomePage()),
+        '/upload': (context) => const AuthGuard(child: UploadScreen()),
+        '/viewer': (context) => const AuthGuard(child: ViewerScreen()),
       },
     );
   }
@@ -38,54 +40,65 @@ class MyApp extends StatelessWidget {
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
 
+  static const String _logoUrl = 'https://ras.webintegral.cl/backend/assets/img/logo.png';
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Inicio'),
         centerTitle: true,
+        title: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Inicio'),
+            const SizedBox(height: 6),
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12), blurRadius: 6, offset: Offset(0, 3))],
+              ),
+              child: CircleAvatar(
+                radius: 22,
+                backgroundColor: Colors.white,
+                child: ClipOval(
+                  child: Image.network(
+                    _logoUrl,
+                    width: 36,
+                    height: 36,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) => const Icon(Icons.image_not_supported, size: 18),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
       drawer: Drawer(
         child: ListView(
           padding: EdgeInsets.zero,
           children: <Widget>[
             // ... (DrawerHeader, etc.)
-
-            // Primer elemento (Página Principal)
             ListTile(
               leading: const Icon(Icons.home),
               title: const Text('Página Principal'),
               onTap: () {
-                // Lógica de "onTap" para la Página Principal
-                Navigator.pop(context); // Solo cierra el menú
+                Navigator.pop(context);
               },
             ),
-
-            // 🎯 ESTE ES EL ELEMENTO DE CONFIGURACIÓN QUE DEBES MODIFICAR
             ListTile(
               leading: const Icon(Icons.settings),
               title: const Text('Configuración'),
-              // ⬇️ MÉTODOS "onTap" VACÍOS ANTES DE MODIFICAR:
-              // onTap: () {
-              //   // Aquí estaba vacío o con solo Navigator.pop(context);
-              // },
-              // ⬇️ CÓDIGO FINAL DE NAVEGACIÓN DENTRO DE "onTap":
               onTap: () {
-                // 1. Cierra el menú lateral (es importante hacerlo primero)
                 Navigator.pop(context);
-
-                // 2. Ejecuta la navegación a la nueva pantalla
                 Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    // Asegúrate de que SettingsPage esté importada
-                    builder: (context) => const SettingsPage(),
-                  ),
+                  MaterialPageRoute(builder: (context) => const SettingsPage()),
                 );
               },
             ),
-
-            // ... (Otros ListTile o Divider)
             const Divider(),
             ListTile(
               leading: const Icon(Icons.logout),
