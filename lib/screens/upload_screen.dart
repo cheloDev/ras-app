@@ -10,6 +10,8 @@ import 'package:http/http.dart' as http;
 import 'package:ras/services/auth_service.dart';
 import 'package:mime/mime.dart';
 
+import '../config.dart';
+
 class UploadScreen extends StatefulWidget {
   const UploadScreen({super.key});
 
@@ -137,7 +139,7 @@ class _UploadScreenState extends State<UploadScreen> {
         encodedImages.add('data:$mimeType;base64,$base64Str');
       }
 
-      final uri = Uri.parse('http://localhost:8010/api/siniestro/upload/');
+      final uri = ApiConfig.uri(ApiEndpoints.siniestroUpload);
       final bodyMap = {
         'siniestro_id': _siniestroId ?? _siniestroController.text.trim(),
         'images': encodedImages,
@@ -229,7 +231,7 @@ class _UploadScreenState extends State<UploadScreen> {
         return;
       }
 
-      final uri = Uri.parse('http://localhost:8010/api/siniestro/get-by-patente');
+      final uri = ApiConfig.uri(ApiEndpoints.siniestroGetByPatente);
       final response = await http
           .post(
         uri,
