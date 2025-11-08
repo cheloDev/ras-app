@@ -1,4 +1,4 @@
-// dart
+//dart
 // File: lib/screens/upload_screen.dart
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -7,7 +7,8 @@ import 'dart:typed_data';
 import 'dart:convert';
 import 'package:ras/utils/image_resizer.dart';
 import 'package:http/http.dart' as http;
-import 'package:ras/services/auth_service.dart'; // <- usar AuthService en lugar de SharedPreferences
+import 'package:ras/services/auth_service.dart';
+import 'package:mime/mime.dart';
 
 class UploadScreen extends StatefulWidget {
   const UploadScreen({super.key});
@@ -23,9 +24,10 @@ class _UploadScreenState extends State<UploadScreen> {
   final ImagePicker _picker = ImagePicker();
   final List<XFile> _images = [];
   bool _isLoading = false;
-
-  // Nuevo: controla si los botones de cámara/galería deben mostrarse
   bool _canPickImages = false;
+
+  // Nuevo: almacenar el id real del siniestro retornado por get-by-patente
+  String? _siniestroId;
 
   @override
   void initState() {
@@ -39,79 +41,162 @@ class _UploadScreenState extends State<UploadScreen> {
   }
 
   Future<void> _pickImage(ImageSource source) async {
-    if (_images.length >= 5) {
+    // límite máximo total
+    const int maxImages = 5;
+
+    // Si se selecciona desde galería, permitir selección múltiple
+    if (source == ImageSource.gallery) {
+      final remaining = maxImages - _images.length;
+      if (remaining <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Ya alcanzaste el máximo de 5 imágenes.')),
+        );
+        return;
+      }
+
+      try {
+        final List<XFile>? pickedFiles = await _picker.pickMultiImage();
+        if (pickedFiles == null || pickedFiles.isEmpty) return;
+
+        final toAdd = pickedFiles.take(remaining);
+        setState(() {
+          _images.addAll(toAdd);
+        });
+
+        if (pickedFiles.length > remaining) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Se agregaron solo $remaining imágenes (máx $maxImages).')),
+          );
+        }
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al seleccionar imágenes: $e')),
+        );
+      }
+
+      return;
+    }
+
+    // Si se selecciona desde cámara, mantener comportamiento de 1 imagen
+    if (_images.length >= maxImages) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No puedes subir más de 5 imágenes.')),
       );
       return;
     }
-    final XFile? image = await _picker.pickImage(source: source);
-    if (image != null) {
-      setState(() {
-        _images.add(image);
-      });
-    }
-  }
 
-  Future<void> _uploadImages() async {
-    if (_formKey.currentState!.validate() && _images.isNotEmpty) {
-      setState(() {
-        _isLoading = true;
-      });
-
-      await Future.delayed(const Duration(seconds: 2));
-      final bool isValid = await _mockValidateSiniestro();
-
-      if (isValid) {
-        final bool isSuccess = await _mockUpload();
-        if (isSuccess) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Imágenes subidas con éxito')),
-          );
-          setState(() {
-            _images.clear();
-            _siniestroController.clear();
-            _patenteController.clear();
-            _canPickImages = false;
-          });
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Error al subir las imágenes')),
-          );
-        }
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Error: Nro de siniestro o patente no válidos')),
-        );
+    try {
+      final XFile? image = await _picker.pickImage(source: source);
+      if (image != null) {
+        setState(() {
+          _images.add(image);
+        });
       }
-
-      setState(() {
-        _isLoading = false;
-      });
-    } else {
+    } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor, complete todos los campos y seleccione al menos una imagen.')),
+        SnackBar(content: Text('Error al abrir la cámara: $e')),
       );
     }
   }
 
-  Future<bool> _mockValidateSiniestro() async {
-    await Future.delayed(const Duration(milliseconds: 300));
-    return _siniestroController.text.isNotEmpty && _patenteController.text.isNotEmpty;
-  }
+  Future<void> _uploadImages() async {
+    if (!(_formKey.currentState?.validate() ?? false) || _images.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Por favor, complete todos los campos y seleccione al menos una imagen.')),
+      );
+      return;
+    }
 
-  Future<bool> _mockUpload() async {
+    if (_images.length > 5) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No puedes subir más de 5 imágenes.')),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
     try {
-      final List<Uint8List> binaryImages = [];
-      for (final image in _images) {
-        final binaryImage = await resizeImage(File(image.path));
-        binaryImages.add(binaryImage);
+      final token = await AuthService().getToken();
+      if (token == null || token.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Token no encontrado. Por favor inicie sesión.')),
+        );
+        setState(() {
+          _isLoading = false;
+          _canPickImages = false;
+        });
+        return;
       }
-      print('Total binary size of images: ${binaryImages.fold(0, (sum, item) => sum + item.length)} bytes');
-      return true;
+
+      final List<String> encodedImages = [];
+      for (final img in _images) {
+        final bytes = await resizeImage(File(img.path));
+        final base64Str = base64Encode(bytes);
+        final mimeType = lookupMimeType(img.path, headerBytes: bytes) ?? 'image/jpeg';
+        encodedImages.add('data:$mimeType;base64,$base64Str');
+      }
+
+      final uri = Uri.parse('http://localhost:8010/api/siniestro/upload/');
+      final bodyMap = {
+        'siniestro_id': _siniestroId ?? _siniestroController.text.trim(),
+        'images': encodedImages,
+      };
+
+      final response = await http
+          .post(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode(bodyMap),
+      )
+          .timeout(const Duration(seconds: 20));
+
+      String serverMessage = 'Error desconocido';
+      if (response.body.isNotEmpty) {
+        try {
+          final parsed = jsonDecode(response.body);
+          if (parsed is Map && parsed['message'] != null) {
+            serverMessage = parsed['message'].toString();
+          } else if (parsed is Map && parsed['msg'] != null) {
+            serverMessage = parsed['msg'].toString();
+          } else {
+            serverMessage = response.body.toString();
+          }
+        } catch (_) {
+          serverMessage = response.body.toString();
+        }
+      }
+
+      if (response.statusCode == 200) {
+        // Solo limpiar la grilla de imágenes; mantener los inputs y _siniestroId
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(serverMessage.isNotEmpty ? serverMessage : 'Imágenes subidas correctamente.')),
+        );
+        setState(() {
+          _images.clear();
+          // mantener _siniestroController.text, _patenteController.text y _siniestroId
+          _canPickImages = true; // permitir seguir agregando imágenes si se desea
+        });
+      } else {
+        setState(() {
+          _canPickImages = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error (${response.statusCode}): $serverMessage')),
+        );
+      }
     } catch (e) {
-      print('Error resizing images: $e');
-      return false;
+      setState(() {
+        _canPickImages = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error de red: $e')),
+      );
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
@@ -131,7 +216,6 @@ class _UploadScreenState extends State<UploadScreen> {
     });
 
     try {
-      // Obtener token usando AuthService (consistente con el resto del proyecto)
       final token = await AuthService().getToken();
 
       if (token == null || token.isEmpty) {
@@ -161,6 +245,21 @@ class _UploadScreenState extends State<UploadScreen> {
           .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
+        // intentar extraer el id desde la estructura: { "siniestro": { "id": ... }, ... }
+        try {
+          final body = jsonDecode(response.body);
+          if (body is Map) {
+            if (body['siniestro'] is Map && body['siniestro']['id'] != null) {
+              _siniestroId = body['siniestro']['id'].toString();
+            } else if (body['id'] != null) {
+              // fallback si el backend devuelve directamente id
+              _siniestroId = body['id'].toString();
+            }
+          }
+        } catch (_) {
+          _siniestroId = null;
+        }
+
         setState(() {
           _canPickImages = true;
         });
@@ -170,6 +269,7 @@ class _UploadScreenState extends State<UploadScreen> {
       } else {
         setState(() {
           _canPickImages = false;
+          _siniestroId = null;
         });
         String message = 'Error al verificar siniestro (${response.statusCode})';
         try {
@@ -183,6 +283,7 @@ class _UploadScreenState extends State<UploadScreen> {
     } catch (e) {
       setState(() {
         _canPickImages = false;
+        _siniestroId = null;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error de red: $e')),
@@ -191,6 +292,26 @@ class _UploadScreenState extends State<UploadScreen> {
       setState(() {
         _isLoading = false;
       });
+    }
+  }
+
+  Future<bool> _mockValidateSiniestro() async {
+    await Future.delayed(const Duration(milliseconds: 300));
+    return _siniestroController.text.isNotEmpty && _patenteController.text.isNotEmpty;
+  }
+
+  Future<bool> _mockUpload() async {
+    try {
+      final List<Uint8List> binaryImages = [];
+      for (final image in _images) {
+        final binaryImage = await resizeImage(File(image.path));
+        binaryImages.add(binaryImage);
+      }
+      print('Total binary size of images: ${binaryImages.fold(0, (sum, item) => sum + item.length)} bytes');
+      return true;
+    } catch (e) {
+      print('Error resizing images: $e');
+      return false;
     }
   }
 
@@ -203,10 +324,41 @@ class _UploadScreenState extends State<UploadScreen> {
     super.dispose();
   }
 
+  void _clearImages() {
+    if (_images.isEmpty) return;
+    setState(() {
+      _images.clear();
+      // mantener _siniestroController.text, _patenteController.text y _siniestroId
+      _canPickImages = true;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Grilla de imágenes limpiada.')),
+    );
+  }
+
+  void _clearFields() {
+    if (_siniestroController.text.trim().isEmpty &&
+        _patenteController.text.trim().isEmpty &&
+        _siniestroId == null) return;
+
+    setState(() {
+      _siniestroController.clear();
+      _patenteController.clear();
+      _siniestroId = null;
+      _canPickImages = false; // desactivar selección hasta verificar de nuevo
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Campos limpiados.')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool fieldsNotEmpty = _siniestroController.text.trim().isNotEmpty && _patenteController.text.trim().isNotEmpty;
-
+    final bool canClear = _siniestroController.text.trim().isNotEmpty ||
+        _patenteController.text.trim().isNotEmpty ||
+        _siniestroId != null;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Subir Imágenes'),
@@ -241,9 +393,21 @@ class _UploadScreenState extends State<UploadScreen> {
                 const SizedBox(height: 12),
                 _isLoading
                     ? const CircularProgressIndicator()
-                    : ElevatedButton(
-                  onPressed: fieldsNotEmpty ? _verifySiniestro : null,
-                  child: const Text('Continuar'),
+                    : Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    ElevatedButton(
+                      onPressed: fieldsNotEmpty ? _verifySiniestro : null,
+                      child: const Text('Continuar'),
+                    ),
+                    ElevatedButton(
+                      onPressed: canClear ? _clearFields : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.grey,
+                      ),
+                      child: const Text('Limpiar'),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 20),
                 if (_canPickImages)
@@ -287,9 +451,21 @@ class _UploadScreenState extends State<UploadScreen> {
                 const SizedBox(height: 20),
                 _isLoading
                     ? const CircularProgressIndicator()
-                    : ElevatedButton(
-                  onPressed: _images.isNotEmpty ? _uploadImages : null,
-                  child: const Text('Subir Imágenes'),
+                    : Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    ElevatedButton(
+                      onPressed: _images.isNotEmpty ? _clearImages : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.redAccent,
+                      ),
+                      child: const Text('Quitar Imágenes'),
+                    ),
+                    ElevatedButton(
+                      onPressed: _images.isNotEmpty ? _uploadImages : null,
+                      child: const Text('Subir Imágenes'),
+                    ),
+                  ],
                 ),
               ],
             ),

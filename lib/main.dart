@@ -117,7 +117,7 @@ class HomePage extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Text(
-              '¡Hola, Marcelo! 👋',
+              'Bienvenido a la App de Ras! 👋',
               style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 20),
