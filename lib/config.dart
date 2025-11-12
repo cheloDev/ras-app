@@ -1,8 +1,8 @@
 // dart
 // File: `lib/config.dart`
 class ApiEndpoints {
-  static const String siniestroUpload = 'api/siniestro/upload/';
-  static const String siniestroGetByPatente = 'api/siniestro/get-by-patente/';
+  static const String siniestroUpload = 'api/siniestro/upload';
+  static const String siniestroGetByPatente = 'api/siniestro/get-by-patente';
   static const String login = 'api/login';
   static const String checkToken = 'api/check-token';
 // agregar otros endpoints aquí...

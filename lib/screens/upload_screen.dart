@@ -1,5 +1,7 @@
 //dart
 // File: lib/screens/upload_screen.dart
+import 'package:permission_handler/permission_handler.dart';
+import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
@@ -43,10 +45,9 @@ class _UploadScreenState extends State<UploadScreen> {
   }
 
   Future<void> _pickImage(ImageSource source) async {
-    // límite máximo total
     const int maxImages = 5;
 
-    // Si se selecciona desde galería, permitir selección múltiple
+    // Lógica para galería (sin cambios)
     if (source == ImageSource.gallery) {
       final remaining = maxImages - _images.length;
       if (remaining <= 0) {
@@ -55,16 +56,13 @@ class _UploadScreenState extends State<UploadScreen> {
         );
         return;
       }
-
       try {
         final List<XFile>? pickedFiles = await _picker.pickMultiImage();
         if (pickedFiles == null || pickedFiles.isEmpty) return;
-
         final toAdd = pickedFiles.take(remaining);
         setState(() {
           _images.addAll(toAdd);
         });
-
         if (pickedFiles.length > remaining) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Se agregaron solo $remaining imágenes (máx $maxImages).')),
@@ -75,11 +73,10 @@ class _UploadScreenState extends State<UploadScreen> {
           SnackBar(content: Text('Error al seleccionar imágenes: $e')),
         );
       }
-
       return;
     }
 
-    // Si se selecciona desde cámara, mantener comportamiento de 1 imagen
+    // Lógica para la cámara
     if (_images.length >= maxImages) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No puedes subir más de 5 imágenes.')),
@@ -87,16 +84,47 @@ class _UploadScreenState extends State<UploadScreen> {
       return;
     }
 
-    try {
-      final XFile? image = await _picker.pickImage(source: source);
-      if (image != null) {
-        setState(() {
-          _images.add(image);
-        });
+    // --- INICIO DE LA MODIFICACIÓN ---
+    // Verificar permisos solo en Android o iOS
+    if (Platform.isAndroid || Platform.isIOS) {
+      final camStatus = await Permission.camera.status;
+      if (!camStatus.isGranted) {
+        final result = await Permission.camera.request();
+        if (!result.isGranted) {
+          if (result.isPermanentlyDenied) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Permiso de cámara denegado. Habilítalo en la configuración.')),
+            );
+            await openAppSettings();
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Permiso de cámara denegado.')),
+            );
+          }
+          return;
+        }
       }
+    }
+    // --- FIN DE LA MODIFICACIÓN ---
+
+    // Abrir cámara, tomar foto, redimensionar y agregar a la grilla
+    try {
+      final XFile? image = await _picker.pickImage(source: ImageSource.camera);
+      if (image == null) return; // El usuario canceló
+
+      final Uint8List bytes = await resizeImage(File(image.path));
+
+      final String dir = (await Directory.systemTemp.createTemp()).path;
+      final String targetPath = p.join(dir, '${DateTime.now().millisecondsSinceEpoch}.jpg');
+      final File resizedFile = File(targetPath);
+      await resizedFile.writeAsBytes(bytes);
+
+      setState(() {
+        _images.add(XFile(resizedFile.path));
+      });
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al abrir la cámara: $e')),
+        SnackBar(content: Text('Error al procesar la imagen: $e')),
       );
     }
   }

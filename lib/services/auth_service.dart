@@ -2,14 +2,14 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../config.dart';
 
 class AuthService {
-  static const String _baseUrl = 'http://localhost:8010';
   static const _tokenKey = 'token';
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
   Future<bool> login(String email, String password) async {
-    final uri = Uri.parse('$_baseUrl/api/login');
+    final uri = ApiConfig.uri(ApiEndpoints.login); // 👈 usa el config
     final resp = await http.post(
       uri,
       headers: {'Content-Type': 'application/json'},
@@ -30,7 +30,7 @@ class AuthService {
   Future<bool> checkToken() async {
     final token = await _storage.read(key: _tokenKey);
     if (token == null) return false;
-    final uri = Uri.parse('$_baseUrl/api/check-token');
+    final uri = ApiConfig.uri(ApiEndpoints.checkToken);
     final resp = await http.get(uri, headers: {
       'Authorization': 'Bearer $token',
       'Accept': 'application/json',
